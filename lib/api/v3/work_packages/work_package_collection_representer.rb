@@ -51,7 +51,7 @@ module API
           @groups = groups
           @total_sums = total_sums
 
-          super(models,
+          super(add_eager_loading(models, current_user),
                 self_link,
                 query: query,
                 page: page,
@@ -61,7 +61,7 @@ module API
 
         link :sumsSchema do
           {
-            href: api_v3_paths.work_package_sums_schema,
+            href: api_v3_paths.work_package_sums_schema
           } if total_sums || groups && groups.any?(&:has_sums?)
         end
 
@@ -81,20 +81,18 @@ module API
 
         collection :elements,
                    getter: -> (*) {
-                     work_packages = sorted_and_eager_loaded_work_packages
-
                      generated_classes = ::Hash.new do |hash, work_package|
-                       hit = hash.values.find { |klass|
+                       hit = hash.values.find do |klass|
                          klass.customizable.type_id == work_package.type_id &&
-                         klass.customizable.project_id == work_package.project_id
-                       }
+                           klass.customizable.project_id == work_package.project_id
+                       end
 
                        hash[work_package] = hit || element_decorator.create_class(work_package)
                      end
 
-                     work_packages.map { |model|
+                     represented.map do |model|
                        generated_classes[model].new(model, current_user: current_user)
-                     }
+                     end
                    },
                    exec_context: :decorator,
                    embedded: true
@@ -112,24 +110,24 @@ module API
                  },
                  render_nil: false
 
-        # Eager load elements used in the representer later
-        # to avoid n+1 queries triggered from each representer.
-        def sorted_and_eager_loaded_work_packages
-          ids_in_order = represented.map(&:id)
-          work_packages = eager_loaded_work_packages(ids_in_order)
+        private
 
-          work_packages.sort_by { |wp| ids_in_order.index(wp.id) }
-        end
-
-        def eager_loaded_work_packages(ids)
-          WorkPackage
+        # Adds the AR models employed in the representer to the scope. This
+        # prevents n+1 queries.
+        #
+        # Because we care for the necessary models ourselves we have to cancel
+        # out include statements that might have already been applied to the
+        # scope (such as is done in Query::Results quite frequently). Without
+        # removing it, the includes might interfere with preloading which is
+        # prefered in order to avoid a single DB query which takes way longer
+        # than a number of individual queries.
+        def add_eager_loading(scope, current_user)
+          scope
+            .except(:includes)
             .include_spent_hours(current_user)
             .preload(element_decorator.to_eager_load)
-            .where(id: ids)
             .select('work_packages.*')
         end
-
-        private
 
         def current_user_allowed_to_add_work_packages?
           current_user.allowed_to?(:add_work_packages, project, global: project.nil?)
