@@ -234,10 +234,10 @@ describe 'API v3 Watcher resource', type: :request do
       get available_watchers_path
     end
 
-    it_behaves_like 'API V3 collection response', 1, 1, 'User'
+    it_behaves_like 'API V3 collection response', 2, 2, 'User'
 
     it 'includes a user eligible for watching' do
-      expect(subject.body).to be_json_eql(current_user.id).at_path('_embedded/elements/0/id')
+      expect(subject.body).to be_json_eql(current_user.id).at_path('_embedded/elements/1/id')
     end
 
     context 'when the user does not have the necessary permissions' do
